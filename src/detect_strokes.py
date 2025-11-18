@@ -29,10 +29,11 @@ CONFIG = {
     'model_path': r'.\output\tennis_stroke_model.keras',
     'label_classes_path': r'.\output\label_classes.npy',
 
-    # TEMPORAL WINDOW CONFIGURATION (time-based, FPS-independent)
-    'reference_fps': 30,  # Reference FPS for window calibration (must match training)
-    'window_size': 45,  # Number of frames at reference_fps (45 frames @ 30fps = 1.5 seconds)
-    'overlap': 15,  # Overlap at reference_fps (15 frames @ 30fps = 0.5 seconds)
+    # TEMPORAL WINDOW CONFIGURATION
+    'enable_fps_scaling': True,  # Enable automatic FPS scaling (True) or use fixed frame counts (False)
+    'reference_fps': 30,  # Reference FPS for window calibration (used only if enable_fps_scaling=True)
+    'window_size': 45,  # Number of frames (45 frames @ 30fps = 1.5 seconds if scaling enabled)
+    'overlap': 15,  # Overlap between windows (15 frames @ 30fps = 0.5 seconds if scaling enabled)
 
     # PREDICTION ALIGNMENT (fixes "seeing the future" effect)
     # Options: 'start', 'center', 'end'
@@ -181,13 +182,17 @@ def detect_strokes_in_video(video_path, model, label_classes, config=CONFIG):
     window_size = config['window_size']
     overlap = config['overlap']
 
-    # Scale parameters based on video FPS
-    reference_fps = config['reference_fps']
-    if fps != reference_fps:
-        window_size, overlap = scale_params_for_fps(reference_fps, fps, window_size, overlap)
+    # Scale parameters based on video FPS (if enabled)
+    if config['enable_fps_scaling']:
+        reference_fps = config['reference_fps']
+        if fps != reference_fps:
+            window_size, overlap = scale_params_for_fps(reference_fps, fps, window_size, overlap)
+        else:
+            print(f"\n📐 FPS Scaling: Enabled (video matches reference FPS)")
+            print(f"   Window: {window_size} frames, Overlap: {overlap} frames")
     else:
-        print(f"\n📐 Using reference FPS parameters (no scaling needed)")
-        print(f"   Window: {window_size} frames, Overlap: {overlap} frames")
+        print(f"\n📐 FPS Scaling: DISABLED (using fixed frame counts)")
+        print(f"   Video FPS: {fps}, Window: {window_size} frames, Overlap: {overlap} frames")
 
     stride = window_size - overlap  # Calculate stride from overlap
 
@@ -767,6 +772,8 @@ if __name__ == "__main__":
                        help=f'Maximum stroke duration in seconds (default: {CONFIG["max_stroke_duration_seconds"]})')
     parser.add_argument('--no-visualize', action='store_true',
                        help='Skip annotated video generation if true')
+    parser.add_argument('--disable-fps-scaling', action='store_true',
+                       help='Disable FPS scaling (use fixed frame counts regardless of video FPS)')
 
     args = parser.parse_args()
 
@@ -781,6 +788,8 @@ if __name__ == "__main__":
         CONFIG['max_stroke_duration_seconds'] = args.max_duration
     if args.no_visualize:
         CONFIG['visualize_video'] = False
+    if args.disable_fps_scaling:
+        CONFIG['enable_fps_scaling'] = False
 
     # Run analysis
     analyze_video(args.video_path, args.output_dir)
