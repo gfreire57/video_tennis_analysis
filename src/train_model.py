@@ -416,40 +416,41 @@ def build_model(input_shape, num_classes, learning_rate=0.001):
     """Build improved LSTM model with BatchNormalization for better discrimination"""
     model = keras.Sequential([
         keras.layers.Input(shape=input_shape),
-        #### V1 - ARQUITETURA ORIGINAL ####
+
+        # #### V1 - ARQUITETURA ORIGINAL ####
         # # First LSTM layer with BatchNormalization
         # keras.layers.LSTM(128, return_sequences=True),
-        # keras.layers.BatchNormalization(),
+        # # keras.layers.BatchNormalization(),
         # keras.layers.Dropout(0.4),
 
         # # Second LSTM layer with BatchNormalization
         # keras.layers.LSTM(96, return_sequences=True),
-        # keras.layers.BatchNormalization(),
+        # # keras.layers.BatchNormalization(),
         # keras.layers.Dropout(0.4),
 
         # # Third LSTM layer with BatchNormalization
         # keras.layers.LSTM(64, return_sequences=False),
-        # keras.layers.BatchNormalization(),
+        # # keras.layers.BatchNormalization(),
         # keras.layers.Dropout(0.3),
 
         # # Dense layers with BatchNormalization
         # keras.layers.Dense(64, activation='relu'),
-        # keras.layers.BatchNormalization(),
+        # # keras.layers.BatchNormalization(),
         # keras.layers.Dropout(0.3),
-        ####
+        # ####
 
         #### V2 - ARQUITETURA MAIS SIMPLES ####
         # Simpler architecture (2 LSTM layers instead of 3)
-        keras.layers.LSTM(64, return_sequences=True),
+        keras.layers.LSTM(128, return_sequences=True),
         # keras.layers.BatchNormalization(),
         keras.layers.Dropout(0.3),
         
-        keras.layers.LSTM(32, return_sequences=False),
+        keras.layers.LSTM(64, return_sequences=False),
         # keras.layers.BatchNormalization(),
         keras.layers.Dropout(0.3),
         ####
 
-        keras.layers.Dense(32, activation='relu'),
+        keras.layers.Dense(64, activation='relu'),
         # keras.layers.BatchNormalization(),
         keras.layers.Dropout(0.2),
 
