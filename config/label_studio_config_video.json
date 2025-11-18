@@ -1,0 +1,153 @@
+[
+    {
+        "data": {
+            "group_id": "forehand_1",
+            "video": "/data/local-files/?d=videos/Forehand_1.MP4"
+        }
+    },
+    {
+        "data": {
+            "group_id": "forehand_2",
+            "video": "/data/local-files/?d=videos/Forehand_2.MP4"
+        }
+    },
+    {
+        "data": {
+            "group_id": "backhand_2",
+            "video": "/data/local-files/?d=videos/Bhand_2.MP4"
+        }
+    },
+    {
+        "data": {
+            "group_id": "backhand_1",
+            "video": "/data/local-files/?d=videos/Bhand_1.MP4"
+        }
+    },
+    {
+        "data": {
+            "group_id": "Jogo_real_1",
+            "video": "/data/local-files/?d=videos/GOPR1058.MP4"
+        }
+    },
+    {
+        "data": {
+            "group_id": "Jogo_real_2",
+            "video": "/data/local-files/?d=videos/GOPR1059.MP4"
+        }
+    },
+    {
+        "data": {
+            "group_id": "Jogo_real_3",
+            "video": "/data/local-files/?d=videos/GOPR1060.MP4"
+        }
+    },
+    {
+        "data": {
+            "group_id": "Jogo_real_4",
+            "video": "/data/local-files/?d=videos/GOPR1061.MP4"
+        }
+    },
+    {
+        "data": {
+            "group_id": "Jogo_real_5",
+            "video": "/data/local-files/?d=videos/GOPR1062.MP4"
+        }
+    },
+    {
+        "data": {
+            "group_id": "secao_1",
+            "video": "/data/local-files/?d=videos/secao_1.MP4"
+        }
+    },
+    {
+        "data": {
+            "group_id": "secao_2",
+            "video": "/data/local-files/?d=videos/secao_2.MP4"
+        }
+    },
+    {
+        "data": {
+            "group_id": "secao_3",
+            "video": "/data/local-files/?d=videos/secao_3.MP4"
+        }
+    },
+    {
+        "data": {
+            "group_id": "secao_4",
+            "video": "/data/local-files/?d=videos/secao_4.MP4"
+        }
+    },
+    {
+        "data": {
+            "group_id": "secao_5",
+            "video": "/data/local-files/?d=videos/secao_5.MP4"
+        }
+    },
+    {
+        "data": {
+            "group_id": "secao_6",
+            "video": "/data/local-files/?d=videos/secao_6.MP4"
+        }
+    },
+    {
+        "data": {
+            "group_id": "secao_7",
+            "video": "/data/local-files/?d=videos/secao_7.MP4"
+        }
+    },
+    {
+        "data": {
+            "group_id": "secao_8",
+            "video": "/data/local-files/?d=videos/secao_8.MP4"
+        }
+    },
+
+    {
+        "data": {
+            "group_id": "secao_10",
+            "video": "/data/local-files/?d=videos/secao_10.MP4"
+        }
+    },
+    {
+        "data": {
+            "group_id": "secao_11",
+            "video": "/data/local-files/?d=videos/secao_11.MP4"
+        }
+    },
+    {
+        "data": {
+            "group_id": "secao_12",
+            "video": "/data/local-files/?d=videos/secao_12.MP4"
+        }
+    },
+    {
+        "data": {
+            "group_id": "secao_13",
+            "video": "/data/local-files/?d=videos/secao_13.MP4"
+        }
+    },
+    {
+        "data": {
+            "group_id": "secao_14",
+            "video": "/data/local-files/?d=videos/secao_14.MP4"
+        }
+    },
+    {
+        "data": {
+            "group_id": "secao_15",
+            "video": "/data/local-files/?d=videos/secao_15.MP4"
+        }
+    },
+    {
+        "data": {
+            "group_id": "secao_16",
+            "video": "/data/local-files/?d=videos/secao_16.MP4"
+        }
+    },
+    {
+        "data": {
+            "group_id": "secao_17",
+            "video": "/data/local-files/?d=videos/secao_17.MP4"
+        }
+    }
+]

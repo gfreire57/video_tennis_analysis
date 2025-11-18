@@ -1,0 +1,7 @@
+<View>
+  <Video name="video" value="$video" timelineHeight="70" />
+  <TimelineLabels name="movimentos" toName="video">
+    <Label value="Backhand" background="#c813ec"/>
+    <Label value="Fronthand" background="#1d81cd"/>
+  </TimelineLabels>
+</View>
