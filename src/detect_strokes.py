@@ -34,6 +34,13 @@ CONFIG = {
     'window_size': 45,  # Number of frames at reference_fps (45 frames @ 30fps = 1.5 seconds)
     'overlap': 15,  # Overlap at reference_fps (15 frames @ 30fps = 0.5 seconds)
 
+    # PREDICTION ALIGNMENT (fixes "seeing the future" effect)
+    # Options: 'start', 'center', 'end'
+    # - 'start': Prediction assigned to start of window (earliest, may appear too early)
+    # - 'center': Prediction centered on window (recommended, most accurate)
+    # - 'end': Prediction assigned to end of window (latest, may appear too late)
+    'prediction_alignment': 'center',
+
     'confidence_threshold': 0.6,  # Minimum confidence to consider a stroke
     'min_stroke_duration': 10,  # Minimum frames for a valid stroke (at reference_fps)
     'max_stroke_duration_seconds': 1.75,  # Maximum duration for a single stroke in seconds
@@ -186,6 +193,7 @@ def detect_strokes_in_video(video_path, model, label_classes, config=CONFIG):
 
     print(f"\nAnalyzing video with sliding window...")
     print(f"Window size: {window_size} frames, Overlap: {overlap} frames, Stride: {stride} frames")
+    print(f"Prediction alignment: '{config.get('prediction_alignment', 'center')}' (to reduce 'seeing the future' effect)")
 
     # Sliding window predictions
     predictions = []
@@ -199,9 +207,34 @@ def detect_strokes_in_video(video_path, model, label_classes, config=CONFIG):
         pred_class = np.argmax(pred[0])
         confidence = pred[0][pred_class]
 
+        # Align prediction based on configuration
+        # This addresses "seeing the future" effect where predictions appear too early
+        alignment = config.get('prediction_alignment', 'center')
+
+        if alignment == 'start':
+            # Original behavior: assign to window start
+            pred_start = i
+            pred_end = i + window_size
+        elif alignment == 'center':
+            # Center prediction on window (reduces early bias by ~0.75s)
+            window_center = i + window_size // 2
+            half_window = window_size // 4  # Use quarter window on each side
+            pred_start = window_center - half_window
+            pred_end = window_center + half_window
+        elif alignment == 'end':
+            # Assign to window end (most conservative)
+            pred_start = i + window_size // 2
+            pred_end = i + window_size
+        else:
+            # Default to center if invalid option
+            window_center = i + window_size // 2
+            half_window = window_size // 4
+            pred_start = window_center - half_window
+            pred_end = window_center + half_window
+
         predictions.append({
-            'frame_start': i,
-            'frame_end': i + window_size,
+            'frame_start': pred_start,
+            'frame_end': pred_end,
             'class_idx': pred_class,
             'class_name': label_classes[pred_class],
             'confidence': float(confidence)
