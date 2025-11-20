@@ -24,6 +24,7 @@ from datetime import datetime
 from sklearn.metrics import classification_report, confusion_matrix, precision_recall_fscore_support
 import seaborn as sns
 from sklearn.utils.class_weight import compute_class_weight
+import time
 
 
 # ============================================================================
@@ -31,24 +32,31 @@ from sklearn.utils.class_weight import compute_class_weight
 # ============================================================================
 
 CONFIG = {
-    'video_base_path': r'D:\Mestrado\redes_neurais\dados_filtrados\videos',  # Base path for videos
+    'video_base_path': r'D:\Mestrado\redes_neurais\dados_filtrados\videos_720p',  # Base path for videos
     'label_studio_exports': r'D:\Mestrado\redes_neurais\video_tennis_analysis\video_tennis_analysis\label_studio_exports',  # Folder with JSON files
     'output_dir': r'D:\Mestrado\redes_neurais\video_tennis_analysis\video_tennis_analysis\output',
 
-    # TEMPORAL WINDOW CONFIGURATION (time-based, FPS-independent)
-    'reference_fps': 30,  # Reference FPS for window calibration
-    'window_size': 45,  # Number of frames per sequence at reference_fps (45 frames @ 30fps = 1.5 seconds)
-    'overlap': 15,  # Overlap between windows at reference_fps (15 frames @ 30fps = 0.5 seconds)
-    'MIN_ANNOTATION_LENGTH': 15,  # Minimum annotation length at reference_fps (15 frames @ 30fps = 0.5 seconds)
+    # POSE DATA CONFIGURATION
+    'use_saved_poses': True,  # Load poses from disk instead of extracting (MUCH FASTER!)
+    'pose_data_dir': r'.\pose_data',  # Directory containing saved pose .npz files
+
+    # TEMPORAL WINDOW CONFIGURATION
+    'enable_fps_scaling': False,  # Enable automatic FPS scaling (True) or use fixed frame counts (False)
+    'reference_fps': 30,  # Reference FPS for window calibration (used only if enable_fps_scaling=True)
+    'window_size': 45,  # Number of frames per sequence (45 frames @ 30fps = 1.5 seconds if scaling enabled)
+    'overlap': 15,  # Overlap between windows (15 frames @ 30fps = 0.5 seconds if scaling enabled)
+    'MIN_ANNOTATION_LENGTH': 15,  # Minimum annotation length (15 frames @ 30fps = 0.5 seconds if scaling enabled)
 
     'confidence_threshold': 0.5,  # MediaPipe confidence threshold
     'use_mixed_precision': False,  # Enable mixed precision training for faster GPU training (GPU only)
     'use_mlflow': True,  # Enable MLflow experiment tracking
     'mlflow_experiment_name': 'tennis_stroke_recognition',  # MLflow experiment name
     'group_classes': True,  # Group slice classes with main strokes, ignore saque
-    'learning_rate': 0.001,  # Learning rate for Adam optimizer (reduced for stability)
+    'use_bidirectional': False,  # Use Bidirectional LSTM on first layer (doubles output units)
+    'learning_rate': 0.0005,  # Learning rate for Adam optimizer (reduced for stability)
     'batch_size': 32,  # Batch size for training
     'epochs': 150,  # Maximum number of epochs (increased for better convergence)
+    'test_size': 0.05,  # Proportion of data for test set
 }
 
 # ============================================================================
@@ -292,15 +300,19 @@ def create_sequences_from_frames(landmarks, annotations, fps, window_size=30, ov
     X, y = [], []
     num_frames = len(landmarks)
 
-    # Scale parameters based on video FPS
-    reference_fps = CONFIG['reference_fps']
-    if fps != reference_fps:
-        window_size, overlap, min_annotation_length = scale_params_for_fps(
-            reference_fps, fps, window_size, overlap, min_annotation_length
-        )
+    # Scale parameters based on video FPS (if enabled)
+    if CONFIG['enable_fps_scaling']:
+        reference_fps = CONFIG['reference_fps']
+        if fps != reference_fps:
+            window_size, overlap, min_annotation_length = scale_params_for_fps(
+                reference_fps, fps, window_size, overlap, min_annotation_length
+            )
+        else:
+            print(f"\n📐 FPS Scaling: Enabled (video matches reference FPS)")
+            print(f"   Window: {window_size} frames, Overlap: {overlap} frames")
     else:
-        print(f"\n📐 Using reference FPS parameters (no scaling needed)")
-        print(f"   Window: {window_size} frames, Overlap: {overlap} frames")
+        print(f"\n📐 FPS Scaling: DISABLED (using fixed frame counts)")
+        print(f"   Video FPS: {fps}, Window: {window_size} frames, Overlap: {overlap} frames")
 
     print(f"\nCreating sequences from {num_frames} frames")
     print(f"Window size: {window_size}, Overlap: {overlap}")
@@ -412,50 +424,67 @@ def create_sequences_from_frames(landmarks, annotations, fps, window_size=30, ov
 # STEP 4: BUILD AND TRAIN LSTM MODEL
 # ============================================================================
 
-def build_model(input_shape, num_classes, learning_rate=0.001):
-    """Build improved LSTM model with BatchNormalization for better discrimination"""
-    model = keras.Sequential([
-        keras.layers.Input(shape=input_shape),
+def build_model(input_shape, num_classes, learning_rate=0.001, use_bidirectional=False):
+    """Build improved LSTM model with optional Bidirectional support
 
-        # #### V1 - ARQUITETURA ORIGINAL ####
-        # # First LSTM layer with BatchNormalization
-        # keras.layers.LSTM(128, return_sequences=True),
-        # # keras.layers.BatchNormalization(),
-        # keras.layers.Dropout(0.4),
+    Args:
+        input_shape: Tuple (window_size, num_features)
+        num_classes: Number of output classes
+        learning_rate: Learning rate for Adam optimizer
+        use_bidirectional: If True, use Bidirectional wrapper on first LSTM layer
+    """
+    model = keras.Sequential()
+    model.add(keras.layers.Input(shape=input_shape))
 
-        # # Second LSTM layer with BatchNormalization
-        # keras.layers.LSTM(96, return_sequences=True),
-        # # keras.layers.BatchNormalization(),
-        # keras.layers.Dropout(0.4),
+    #### V1 - ARQUITETURA ORIGINAL ####
+    # First LSTM layer - optionally Bidirectional
+    if use_bidirectional:
+        model.add(keras.layers.Bidirectional(
+            keras.layers.LSTM(64, return_sequences=True, activation='relu')
+        ))  # Output: 128 units (64*2)
+    else:
+        model.add(keras.layers.LSTM(64, return_sequences=True, activation='relu'))
 
-        # # Third LSTM layer with BatchNormalization
-        # keras.layers.LSTM(64, return_sequences=False),
-        # # keras.layers.BatchNormalization(),
-        # keras.layers.Dropout(0.3),
+    # model.add(keras.layers.BatchNormalization())
+    model.add(keras.layers.Dropout(0.4))
 
-        # # Dense layers with BatchNormalization
-        # keras.layers.Dense(64, activation='relu'),
-        # # keras.layers.BatchNormalization(),
-        # keras.layers.Dropout(0.3),
-        # ####
+    # Second LSTM layer with BatchNormalization
+    model.add(keras.layers.LSTM(128, return_sequences=True, activation='relu'))
+    # model.add(keras.layers.BatchNormalization())
+    model.add(keras.layers.Dropout(0.4))
 
-        #### V2 - ARQUITETURA MAIS SIMPLES ####
-        # Simpler architecture (2 LSTM layers instead of 3)
-        keras.layers.LSTM(128, return_sequences=True),
-        # keras.layers.BatchNormalization(),
-        keras.layers.Dropout(0.3),
-        
-        keras.layers.LSTM(64, return_sequences=False),
-        # keras.layers.BatchNormalization(),
-        keras.layers.Dropout(0.3),
-        ####
+    # Third LSTM layer with BatchNormalization
+    model.add(keras.layers.LSTM(64, return_sequences=False, activation='relu'))
+    # model.add(keras.layers.BatchNormalization())
+    model.add(keras.layers.Dropout(0.3))
 
-        keras.layers.Dense(64, activation='relu'),
-        # keras.layers.BatchNormalization(),
-        keras.layers.Dropout(0.2),
+    # Dense layers with BatchNormalization
+    model.add(keras.layers.Dense(64, activation='relu'))
+    # model.add(keras.layers.BatchNormalization())
+    model.add(keras.layers.Dropout(0.3))
+    ####
 
-        keras.layers.Dense(num_classes, activation='softmax')
-    ])
+    # #### V2 - ARQUITETURA MAIS SIMPLES ####
+    # # Simpler architecture (2 LSTM layers instead of 3)
+    # if use_bidirectional:
+    #     model.add(keras.layers.Bidirectional(
+    #         keras.layers.LSTM(128, return_sequences=True)
+    #     ))  # Output: 256 units (128*2)
+    # else:
+    #     model.add(keras.layers.LSTM(128, return_sequences=True))
+    # # model.add(keras.layers.BatchNormalization())
+    # model.add(keras.layers.Dropout(0.3))
+
+    # model.add(keras.layers.LSTM(64, return_sequences=False))
+    # # model.add(keras.layers.BatchNormalization())
+    # model.add(keras.layers.Dropout(0.3))
+    # ####
+
+    model.add(keras.layers.Dense(64, activation='relu'))
+    # model.add(keras.layers.BatchNormalization())
+    model.add(keras.layers.Dropout(0.2))
+
+    model.add(keras.layers.Dense(num_classes, activation='softmax'))
 
     model.compile(
         optimizer=keras.optimizers.Adam(learning_rate=learning_rate),
@@ -492,6 +521,58 @@ def plot_training_history(history, output_dir):
     print(f"Training history saved to {output_dir}/training_history.png")
 
 # ============================================================================
+# POSE DATA LOADING
+# ============================================================================
+
+def load_saved_poses(pose_data_dir):
+    """Load all saved pose data from disk
+
+    Args:
+        pose_data_dir: Directory containing saved .npz files
+
+    Returns:
+        List of dictionaries with pose data for each video
+    """
+    pose_data_dir = Path(pose_data_dir)
+
+    if not pose_data_dir.exists():
+        raise FileNotFoundError(
+            f"Pose data directory not found: {pose_data_dir}\n"
+            f"Run: poetry run python src/extract_poses.py"
+        )
+
+    pose_files = list(pose_data_dir.glob('*_poses.npz'))
+
+    if len(pose_files) == 0:
+        raise FileNotFoundError(
+            f"No pose files found in {pose_data_dir}\n"
+            f"Run: poetry run python src/extract_poses.py"
+        )
+
+    print(f"\n📂 Loading {len(pose_files)} saved pose files from: {pose_data_dir}")
+
+    all_pose_data = []
+
+    for pose_file in pose_files:
+        data = np.load(pose_file, allow_pickle=True)
+
+        pose_data = {
+            'landmarks': data['landmarks'],
+            'fps': float(data['fps']),
+            'video_filename': str(data['video_filename']),
+            'annotations': data['annotations'].tolist(),
+            'num_frames': int(data['num_frames']),
+        }
+
+        all_pose_data.append(pose_data)
+        print(f"  ✓ {pose_file.name}: {pose_data['num_frames']} frames")
+
+    print(f"✅ Successfully loaded {len(all_pose_data)} pose datasets\n")
+
+    return all_pose_data
+
+
+# ============================================================================
 # MAIN PIPELINE
 # ============================================================================
 
@@ -519,72 +600,122 @@ def main():
     print("TENNIS STROKE RECOGNITION - POSE + LSTM")
     print("FRAME-BASED ANNOTATIONS")
     print("=" * 70)
-    
-    # Initialize pose extractor
-    pose_extractor = PoseExtractor()
-    
-    # Process all Label Studio JSON files
+
+    # Process all data - either load from saved poses or extract from videos
     all_X, all_y = [], []
-    
-    json_files = list(Path(CONFIG['label_studio_exports']).glob('*.json'))
-    print(f"\nFound {len(json_files)} annotation files")
-    
-    for json_file in json_files:
-        print(f"\n{'='*70}")
-        print(f"Processing: {json_file.name}")
-        print(f"{'='*70}")
-        
-        # Parse annotations
-        video_filename, annotations = parse_label_studio_json_frames(json_file)
-        # Construct full path, ensuring proper path separator
-        video_path = str(Path(CONFIG['video_base_path']) / video_filename)
-        
-        print(f"Video: {video_filename}")
-        print(f"Annotations: {len(annotations)}")
-        for anno in annotations:
-            duration_frames = anno['end_frame'] - anno['start_frame']
-            print(f"  - {anno['label']}: frames {anno['start_frame']}-{anno['end_frame']} "
-                  f"({duration_frames} frames)")
-        
-        # Check if video exists
-        if not Path(video_path).exists():
-            print(f"WARNING: Video not found at {video_path}, skipping...")
-            continue
-        
-        # Extract poses
-        landmarks, fps = pose_extractor.extract_from_video(video_path)
-        
-        if landmarks is None:
-            print(f"Skipping {video_filename} - could not process video")
-            continue
-        
-        print(f"Extracted {len(landmarks)} pose sequences")
 
-        # Create training sequences
-        X, y = create_sequences_from_frames(
-            landmarks,
-            annotations,
-            fps,
-            window_size=CONFIG['window_size'],
-            overlap=CONFIG['overlap'],
-            group_classes=CONFIG['group_classes'],
-            min_annotation_length=CONFIG['MIN_ANNOTATION_LENGTH']
-        )
+    if CONFIG['use_saved_poses']:
+        # ========== FAST PATH: Load from saved poses ==========
+        print("\n🚀 FAST MODE: Loading from saved pose data")
+        print(f"   (Set use_saved_poses=False to extract from videos)")
 
-        # Skip videos with no sequences
-        if len(X) == 0:
-            print("⚠️  WARNING: No sequences created for this video (annotations too short or no valid windows)")
-            print("   Skipping this video...")
-            continue
+        all_pose_data = load_saved_poses(CONFIG['pose_data_dir'])
 
-        # Print label distribution for this video
-        unique, counts = np.unique(y, return_counts=True)
-        print("Label distribution:")
-        for label, count in zip(unique, counts):
-            print(f"  {label}: {count}")
+        for pose_data in all_pose_data:
+            video_filename = pose_data['video_filename']
+            landmarks = pose_data['landmarks']
+            fps = pose_data['fps']
+            annotations = pose_data['annotations']
 
-        all_X.append(X)
-        all_y.append(y)
+            print(f"\n{'='*70}")
+            print(f"Processing: {video_filename}")
+            print(f"{'='*70}")
+            print(f"Frames: {len(landmarks)}, FPS: {fps}")
+            print(f"Annotations: {len(annotations)}")
+
+            # Create training sequences
+            print("Criando sequencias de treinamento...")
+            X, y = create_sequences_from_frames(
+                landmarks,
+                annotations,
+                fps,
+                window_size=CONFIG['window_size'],
+                overlap=CONFIG['overlap'],
+                group_classes=CONFIG['group_classes'],
+                min_annotation_length=CONFIG['MIN_ANNOTATION_LENGTH']
+            )
+
+            # Skip videos with no sequences
+            if len(X) == 0:
+                print("⚠️  WARNING: No sequences created for this video")
+                continue
+
+            # Print label distribution
+            unique, counts = np.unique(y, return_counts=True)
+            print("Label distribution:")
+            for label, count in zip(unique, counts):
+                print(f"  {label}: {count}")
+
+            all_X.append(X)
+            all_y.append(y)
+
+    else:
+        # ========== SLOW PATH: Extract poses from videos ==========
+        print("\n🐢 SLOW MODE: Extracting poses from videos")
+        print(f"   (This is slow! Consider running: poetry run python src/extract_poses.py)")
+        print(f"   (Then set use_saved_poses=True in CONFIG)\n")
+
+        # Initialize pose extractor
+        pose_extractor = PoseExtractor()
+
+        json_files = list(Path(CONFIG['label_studio_exports']).glob('*.json'))
+        print(f"Found {len(json_files)} annotation files")
+
+        for json_file in json_files:
+            print(f"\n{'='*70}")
+            print(f"Processing: {json_file.name}")
+            print(f"{'='*70}")
+
+            # Parse annotations
+            video_filename, annotations = parse_label_studio_json_frames(json_file)
+            video_path = str(Path(CONFIG['video_base_path']) / video_filename)
+
+            print(f"Video: {video_filename}")
+            print(f"Annotations: {len(annotations)}")
+            for anno in annotations:
+                duration_frames = anno['end_frame'] - anno['start_frame']
+                print(f"  - {anno['label']}: frames {anno['start_frame']}-{anno['end_frame']} "
+                      f"({duration_frames} frames)")
+
+            # Check if video exists
+            if not Path(video_path).exists():
+                print(f"WARNING: Video not found at {video_path}, skipping...")
+                continue
+
+            # Extract poses
+            landmarks, fps = pose_extractor.extract_from_video(video_path)
+
+            if landmarks is None:
+                print(f"Skipping {video_filename} - could not process video")
+                continue
+
+            print(f"Extracted {len(landmarks)} pose sequences")
+
+            # Create training sequences
+            X, y = create_sequences_from_frames(
+                landmarks,
+                annotations,
+                fps,
+                window_size=CONFIG['window_size'],
+                overlap=CONFIG['overlap'],
+                group_classes=CONFIG['group_classes'],
+                min_annotation_length=CONFIG['MIN_ANNOTATION_LENGTH']
+            )
+
+            # Skip videos with no sequences
+            if len(X) == 0:
+                print("⚠️  WARNING: No sequences created for this video (annotations too short or no valid windows)")
+                print("   Skipping this video...")
+                continue
+
+            # Print label distribution for this video
+            unique, counts = np.unique(y, return_counts=True)
+            print("Label distribution:")
+            for label, count in zip(unique, counts):
+                print(f"  {label}: {count}")
+
+            all_X.append(X)
+            all_y.append(y)
     
     # Combine all data
     if len(all_X) == 0:
@@ -620,7 +751,7 @@ def main():
     
     # Split data
     X_train, X_test, y_train, y_test = train_test_split(
-        X_all, y_encoded, test_size=0.2, random_state=42, stratify=y_encoded
+        X_all, y_encoded, test_size=CONFIG['test_size'], random_state=42, stratify=y_encoded
     )
     
     print(f"\nTrain set: {len(X_train)} samples")
@@ -641,16 +772,19 @@ def main():
     print(f"  - Features per frame: {num_features} (from {len(SELECTED_LANDMARKS)} landmarks)")
     print(f"  - Number of classes: {num_classes}")
 
-    model = build_model(input_shape, num_classes, learning_rate=CONFIG['learning_rate'])
+    model = build_model(input_shape, num_classes, learning_rate=CONFIG['learning_rate'], use_bidirectional=CONFIG['use_bidirectional'])
     model.summary()
 
     # Start MLflow run
     if CONFIG['use_mlflow']:
         mlflow.start_run(run_name=f"lstm_run_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
 
-        # Log parameters
+        # Log basic parameters
+        mlflow.log_param("enable_fps_scaling", CONFIG['enable_fps_scaling'])
         mlflow.log_param("window_size", CONFIG['window_size'])
         mlflow.log_param("overlap", CONFIG['overlap'])
+        mlflow.log_param("reference_fps", CONFIG['reference_fps'])
+        mlflow.log_param("min_annotation_length", CONFIG['MIN_ANNOTATION_LENGTH'])
         mlflow.log_param("num_classes", num_classes)
         mlflow.log_param("num_features", num_features)
         mlflow.log_param("num_landmarks", len(SELECTED_LANDMARKS))
@@ -662,6 +796,59 @@ def main():
         mlflow.log_param("epochs", CONFIG['epochs'])
         mlflow.log_param("learning_rate", CONFIG['learning_rate'])
         mlflow.log_param("group_classes", CONFIG['group_classes'])
+
+        # Extract and log model architecture details
+        lstm_layers = []
+        dense_layers = []
+        dropout_rates = []
+        uses_batch_norm = False
+        uses_bidirectional = False
+
+        for layer in model.layers:
+            layer_type = layer.__class__.__name__
+
+            if layer_type == 'LSTM':
+                lstm_layers.append(layer.units)
+            elif layer_type == 'Bidirectional':
+                uses_bidirectional = True
+                # Get units from the wrapped LSTM layer
+                wrapped_layer = layer.layer
+                if wrapped_layer.__class__.__name__ == 'LSTM':
+                    lstm_layers.append(wrapped_layer.units * 2)  # Bidirectional doubles the units
+            elif layer_type == 'Dense':
+                # Exclude the output layer (softmax)
+                if layer.activation.__name__ != 'softmax':
+                    dense_layers.append(layer.units)
+            elif layer_type == 'Dropout':
+                dropout_rates.append(layer.rate)
+            elif layer_type == 'BatchNormalization':
+                uses_batch_norm = True
+
+        # Log architecture parameters
+        mlflow.log_param("num_lstm_layers", len(lstm_layers))
+        mlflow.log_param("num_dense_layers", len(dense_layers))
+        mlflow.log_param("uses_batch_normalization", uses_batch_norm)
+        mlflow.log_param("uses_bidirectional", uses_bidirectional)
+
+        # Log LSTM units for each layer
+        for i, units in enumerate(lstm_layers, 1):
+            mlflow.log_param(f"lstm_layer_{i}_units", units)
+
+        # Log Dense units for each layer (excluding output layer)
+        for i, units in enumerate(dense_layers, 1):
+            mlflow.log_param(f"dense_layer_{i}_units", units)
+
+        # Log dropout rates
+        for i, rate in enumerate(dropout_rates, 1):
+            mlflow.log_param(f"dropout_{i}_rate", rate)
+
+        # Log architecture summary as a single string for easy viewing
+        arch_summary = f"LSTM{lstm_layers} → Dense{dense_layers}"
+        if uses_bidirectional:
+            arch_summary = f"Bidirectional-{arch_summary}"
+        if uses_batch_norm:
+            arch_summary += " + BatchNorm"
+        mlflow.log_param("architecture_summary", arch_summary)
 
         # Log class distribution
         for idx, label in enumerate(label_encoder.classes_):
@@ -686,6 +873,12 @@ def main():
         print(f"  {class_name}: {weight:.3f} (n={class_count})")
     print()
 
+    # Log class weights to MLflow
+    if CONFIG['use_mlflow']:
+        for idx, weight in class_weights.items():
+            class_name = label_encoder.classes_[idx]
+            mlflow.log_param(f"class_weight_{class_name}", f"{weight:.3f}")
+
     # Train model
     print(f"\n{'='*70}")
     print("TRAINING MODEL")
@@ -706,6 +899,9 @@ def main():
         )
     ]
 
+    # Track training time
+    training_start_time = time.time()
+
     history = model.fit(
         X_train, y_train,
         validation_split=0.2,
@@ -715,6 +911,12 @@ def main():
         callbacks=callbacks,
         verbose=1
     )
+
+    training_end_time = time.time()
+    training_duration_seconds = training_end_time - training_start_time
+    training_duration_minutes = training_duration_seconds / 60
+
+    print(f"\n⏱️  Training completed in {training_duration_minutes:.2f} minutes ({training_duration_seconds:.1f} seconds)")
 
     # Evaluate
     print(f"\n{'='*70}")
@@ -727,6 +929,11 @@ def main():
 
     # Log metrics to MLflow
     if CONFIG['use_mlflow']:
+        # Training time metrics
+        mlflow.log_metric("training_time_seconds", training_duration_seconds)
+        mlflow.log_metric("training_time_minutes", training_duration_minutes)
+
+        # Performance metrics
         mlflow.log_metric("test_accuracy", test_acc)
         mlflow.log_metric("test_loss", test_loss)
         mlflow.log_metric("final_train_accuracy", history.history['accuracy'][-1])
@@ -811,6 +1018,9 @@ def main():
 
         # Log model
         mlflow.tensorflow.log_model(model, "model")
+        # Log the trained model
+        mlflow.keras.log_model(model, "model")
+
 
         # Log artifacts (plots, label classes)
         mlflow.log_artifact(f"{CONFIG['output_dir']}/training_history.png")
