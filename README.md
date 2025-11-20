@@ -385,10 +385,17 @@ poetry install
 
 ## Documentation
 
-- **[README.md](README.md)**: This file - overview and usage
-- **[MLFLOW_GUIDE.md](MLFLOW_GUIDE.md)**: MLflow experiment tracking
-- **[DEVELOPMENT_NOTES.md](DEVELOPMENT_NOTES.md)**: Design decisions and lessons learned
-- **[USAGE_GUIDE.md](USAGE_GUIDE.md)**: Detailed step-by-step examples
+**Complete documentation is available in [documentacao/](documentacao/)**
+
+**Quick links:**
+- **[Getting Started Guide](documentacao/00_GETTING_STARTED.md)** - Start here!
+- **[Documentation Index](documentacao/README_DOCS.md)** - Complete navigation guide
+- **[Architecture Guide](documentacao/01_ARCHITECTURE.md)** - How the system works
+- **[Usage Guide](documentacao/03_USAGE_GUIDE.md)** - Detailed step-by-step examples
+- **[MLflow Tracking](documentacao/07_MLFLOW_TRACKING.md)** - Experiment tracking
+- **[Model Optimization](documentacao/05_MODEL_OPTIMIZATION.md)** - Improve accuracy
+
+**Browse all 10 documentation files:** [documentacao/README_DOCS.md](documentacao/README_DOCS.md)
 
 ## License
 
