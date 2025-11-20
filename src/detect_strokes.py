@@ -19,6 +19,8 @@ import matplotlib.pyplot as plt
 import mediapipe as mp
 import numpy as np
 import tensorflow as tf
+import mlflow
+import mlflow.tensorflow
 
 
 # ============================================================================
@@ -28,6 +30,11 @@ import tensorflow as tf
 CONFIG = {
     'model_path': r'.\output\tennis_stroke_model.keras',
     'label_classes_path': r'.\output\label_classes.npy',
+
+    # MLFLOW CONFIGURATION
+    'use_mlflow': True,  # Load model from MLflow (overrides model_path if True)
+    'mlflow_run_id': 'fe612ad3ab7b4dc48473f54bf295a158',  # MLflow run ID to load model from
+    'mlflow_tracking_uri': 'file:./mlruns',  # MLflow tracking URI
 
     # TEMPORAL WINDOW CONFIGURATION
     'enable_fps_scaling': True,  # Enable automatic FPS scaling (True) or use fixed frame counts (False)
@@ -48,6 +55,93 @@ CONFIG = {
     'merge_nearby_strokes': 15,  # Merge strokes within this many frames (at reference_fps)
     'visualize_video': True,  # Generate annotated video with pose and predictions
 }
+
+
+# ============================================================================
+# MODEL LOADING
+# ============================================================================
+
+def load_model_from_mlflow(run_id, tracking_uri='file:./mlruns'):
+    """
+    Load model and label classes from MLflow run
+
+    Args:
+        run_id: MLflow run ID
+        tracking_uri: MLflow tracking URI
+
+    Returns:
+        model: Loaded Keras model
+        label_classes: Label classes array
+    """
+    mlflow.set_tracking_uri(tracking_uri)
+
+    print(f"\n📦 Loading model from MLflow:")
+    print(f"   Run ID: {run_id}")
+    print(f"   Tracking URI: {tracking_uri}")
+
+    try:
+        # Load model from MLflow
+        model_uri = f"runs:/{run_id}/model"
+        model = mlflow.keras.load_model(model_uri)
+        print(f"   ✅ Model loaded successfully")
+
+        # Load label classes from MLflow artifacts
+        client = mlflow.tracking.MlflowClient(tracking_uri=tracking_uri)
+        run = client.get_run(run_id)
+
+        # Download label_classes.npy from artifacts
+        try:
+            artifact_path = client.download_artifacts(run_id, "label_classes.npy")
+        except Exception as e:
+            artifact_path = rf"D:\Mestrado\redes_neurais\video_tennis_analysis\video_tennis_analysis\output\label_classes.npy"
+
+        label_classes = np.load(artifact_path, allow_pickle=True)
+        print(f"   ✅ Label classes loaded: {', '.join(label_classes)}")
+
+        # Print run metadata
+        print(f"\n   📊 Run Metadata:")
+        if 'test_accuracy' in run.data.metrics:
+            print(f"      Test Accuracy: {run.data.metrics['test_accuracy']:.4f}")
+        if 'architecture_summary' in run.data.params:
+            print(f"      Architecture: {run.data.params['architecture_summary']}")
+        if 'window_size' in run.data.params:
+            print(f"      Window Size: {run.data.params['window_size']}")
+
+        return model, label_classes
+
+    except Exception as e:
+        print(f"\n❌ Error loading model from MLflow: {e}")
+        print(f"\nTroubleshooting:")
+        print(f"   1. Check that MLflow run ID is correct")
+        print(f"   2. Verify tracking URI: {tracking_uri}")
+        print(f"   3. Run 'mlflow ui' and browse to http://localhost:5000")
+        print(f"   4. Click on a run to find its Run ID")
+        raise
+
+
+def load_model_from_path(model_path, label_classes_path):
+    """
+    Load model and label classes from local file paths
+
+    Args:
+        model_path: Path to .keras model file
+        label_classes_path: Path to .npy label classes file
+
+    Returns:
+        model: Loaded Keras model
+        label_classes: Label classes array
+    """
+    print(f"\n📦 Loading model from local path:")
+    print(f"   Model: {model_path}")
+    print(f"   Labels: {label_classes_path}")
+
+    model = keras.models.load_model(model_path)
+    label_classes = np.load(label_classes_path, allow_pickle=True)
+
+    print(f"   ✅ Model loaded successfully")
+    print(f"   ✅ Label classes: {', '.join(label_classes)}")
+
+    return model, label_classes
 
 
 # ============================================================================
@@ -690,9 +784,21 @@ def analyze_video(video_path, output_dir='./analysis_output'):
 
     # Load model and label classes
     print("Loading trained model...")
-    model = keras.models.load_model(CONFIG['model_path'])
-    label_classes = np.load(CONFIG['label_classes_path'], allow_pickle=True)
+    # model = keras.models.load_model(CONFIG['model_path'])
+    # label_classes = np.load(CONFIG['label_classes_path'], allow_pickle=True)
+    # print(f"Model loaded. Classes: {', '.join(label_classes)}")
+
+    if CONFIG.get('use_mlflow', False):
+        run_id = CONFIG.get('mlflow_run_id')
+        if not run_id:
+            raise ValueError("CONFIG['use_mlflow'] is True but 'mlflow_run_id' is not set.")
+        tracking_uri = CONFIG.get('mlflow_tracking_uri', 'file:./mlruns')
+        model, label_classes = load_model_from_mlflow(run_id, tracking_uri=tracking_uri)
+    else:
+        model, label_classes = load_model_from_path(CONFIG['model_path'], CONFIG['label_classes_path'])
+
     print(f"Model loaded. Classes: {', '.join(label_classes)}")
+
     print()
 
     # Detect strokes
